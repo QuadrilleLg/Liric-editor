@@ -180,6 +180,20 @@ input[type=file]{display:none;}
     <div class="sg"><span class="sg-label">BURTU</span><div class="chips" id="chips-case"></div></div>
     <div class="sg"><span class="sg-label">ANIMĀC.</span><div class="chips" id="chips-anim"></div></div>
     <div class="sg"><span class="sg-label">EFEKTI</span><div class="chips" id="chips-fx"></div></div>
+    <div class="sg"><span class="sg-label">VIZUAL.</span><div class="chips" id="chips-viz"></div></div>
+    <div class="slider-row">
+      <label for="viz-opacity-slider">SPILGT.</label>
+      <input type="range" id="viz-opacity-slider" min="5" max="100" value="40" oninput="cfg.vizOpacity=this.value/100;document.getElementById('viz-op-val').textContent=this.value+'%'">
+      <span class="slider-val" id="viz-op-val">40%</span>
+    </div>
+    <div class="sg" style="margin-top:4px">
+      <span class="sg-label">MĀKSL.</span>
+      <input type="text" id="artist-input" placeholder="MonoLg" value="MonoLg" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;font-family:'Space Mono',monospace;font-size:11px;outline:none;" oninput="cfg.artistName=this.value">
+    </div>
+    <div class="sg">
+      <span class="sg-label">DZIESMA</span>
+      <input type="text" id="song-input" placeholder="Dziesmas nosaukums" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;font-family:'Space Mono',monospace;font-size:11px;outline:none;" oninput="cfg.songName=this.value">
+    </div>
   </div>
 
   <div id="preview-wrap">
@@ -313,7 +327,7 @@ function resizePreview(){
 }
 
 // ── SETTINGS ──
-var cfg={style:'bebas-dark',font:'bebas',caseMode:'none',anim:'fade',sparkles:false,particles:true};
+var cfg={style:'bebas-dark',font:'bebas',caseMode:'none',anim:'fade',sparkles:false,particles:true,viz:'bars',vizOpacity:0.4,artistName:'MonoLg',songName:''};
 var styleOpts=[['bebas-dark','DARK'],['minimal-white','WHITE'],['neon-glow','NEON'],['retro-vhs','VHS']];
 var fontOpts=[['bebas','BEBAS'],['mono','MONO'],['serif','SERIF'],['script','SCRIPT'],['oswald','OSWALD']];
 var caseOpts=[['upper','AA'],['lower','aa'],['title','Aa'],['none','as-is']];
@@ -326,6 +340,17 @@ function buildChips(){
   buildGroup('chips-case',caseOpts,'caseMode');
   buildGroup('chips-anim',animOpts,'anim');
   buildFxChips();
+  buildVizChips();
+}
+function buildVizChips(){
+  var el=document.getElementById('chips-viz');el.innerHTML='';
+  [['bars','BARS'],['wave','WAVE'],['circle','CIRCLE'],['none','OFF']].forEach(function(o){
+    var b=document.createElement('button');
+    b.className='chip'+(cfg.viz===o[0]?' on':'');
+    b.textContent=o[1];
+    b.onclick=function(){cfg.viz=o[0];buildVizChips();};
+    el.appendChild(b);
+  });
 }
 function buildGroup(elId,opts,key){
   var el=document.getElementById(elId);el.innerHTML='';
@@ -454,6 +479,29 @@ function startTypewriter(text){
   twInterval=setInterval(function(){if(twState.pos>=twState.target.length){clearInterval(twInterval);return;}twState.pos++;twState.displayed=twState.target.substring(0,twState.pos);},38);
 }
 
+// ── AUDIO ANALYSER ──
+var analyserCtx=null, analyser=null, analyserSrc=null, freqData=null;
+function setupAnalyser(){
+  if(!audio)return;
+  try{
+    if(analyserCtx)analyserCtx.close();
+    analyserCtx=new AudioContext();
+    analyser=analyserCtx.createAnalyser();
+    analyser.fftSize=128;
+    analyser.smoothingTimeConstant=0.8;
+    freqData=new Uint8Array(analyser.frequencyBinCount);
+    analyserSrc=analyserCtx.createMediaElementSource(audio);
+    analyserSrc.connect(analyser);
+    analyser.connect(analyserCtx.destination);
+  }catch(e){analyser=null;}
+}
+function getFreqData(){
+  if(!analyser||!audio||audio.paused)return null;
+  if(analyserCtx&&analyserCtx.state==='suspended')analyserCtx.resume();
+  analyser.getByteFrequencyData(freqData);
+  return freqData;
+}
+
 // ── RENDER LOOP ──
 function loop(){
   requestAnimationFrame(loop);
@@ -494,12 +542,65 @@ function loop(){
     if(line)lines.push(line);
     var lh=fs*1.18,th=lines.length*lh;
     for(var li=0;li<lines.length;li++)rctx.fillText(lines[li],W/2,H/2+yOff-th/2+li*lh+lh/2);
-    rctx.shadowBlur=0;rctx.font='11px Space Mono,monospace';rctx.fillStyle=s.sub;rctx.globalAlpha=op*.5;
-    rctx.fillText('MONOLG',W/2,H/2+yOff+th/2+18);
+    rctx.shadowBlur=0;
+    // Artist name
+    if(cfg.artistName){
+      rctx.font='bold 11px Space Mono,monospace';rctx.fillStyle=s.sub;rctx.globalAlpha=op*.55;
+      rctx.fillText(cfg.artistName.toUpperCase(),W/2,H/2+yOff+th/2+20);
+    }
+    // Song name below artist
+    if(cfg.songName){
+      rctx.font='10px Space Mono,monospace';rctx.fillStyle=s.sub;rctx.globalAlpha=op*.4;
+      rctx.fillText(cfg.songName,W/2,H/2+yOff+th/2+36);
+    }
     rctx.restore();
   }
-  // REC indicator only on preview (HTML overlay handles it), not drawn on canvas
-  // so offscreen capture is clean
+  // ── VISUALIZER ──
+  if(cfg.viz!=='none'){
+    var fd=getFreqData();
+    if(fd){
+      var vOp=cfg.vizOpacity||0.4;
+      var vc=s.pc||'#e8ff00';
+      rctx.save();rctx.globalAlpha=vOp;
+      if(cfg.viz==='bars'){
+        var bCount=48,bW=W/bCount*.6,gap=W/bCount*.4;
+        for(var bi=0;bi<bCount;bi++){
+          var val=fd[Math.floor(bi*fd.length/bCount)]/255;
+          var bH=val*H*0.35;
+          var bx=bi*(bW+gap)+(gap/2);
+          var by=H-bH;
+          var alpha=0.4+val*0.6;
+          rctx.fillStyle=vc;rctx.globalAlpha=vOp*alpha;
+          rctx.fillRect(bx,by,bW,bH);
+          // mirror top
+          rctx.globalAlpha=vOp*alpha*0.3;
+          rctx.fillRect(bx,0,bW,bH*0.3);
+        }
+      } else if(cfg.viz==='wave'){
+        rctx.strokeStyle=vc;rctx.lineWidth=2;rctx.beginPath();
+        for(var wi2=0;wi2<fd.length;wi2++){
+          var wx=wi2/fd.length*W;
+          var wy=H*0.85-(fd[wi2]/255)*H*0.3;
+          if(wi2===0)rctx.moveTo(wx,wy);else rctx.lineTo(wx,wy);
+        }
+        rctx.stroke();
+      } else if(cfg.viz==='circle'){
+        var cx2=W/2,cy2=H/2,rBase=Math.min(W,H)*0.25;
+        rctx.strokeStyle=vc;rctx.lineWidth=2;
+        for(var ci=0;ci<fd.length;ci++){
+          var angle=ci/fd.length*Math.PI*2-Math.PI/2;
+          var r1=rBase,r2=rBase+(fd[ci]/255)*Math.min(W,H)*0.18;
+          rctx.beginPath();
+          rctx.moveTo(cx2+Math.cos(angle)*r1,cy2+Math.sin(angle)*r1);
+          rctx.lineTo(cx2+Math.cos(angle)*r2,cy2+Math.sin(angle)*r2);
+          rctx.globalAlpha=vOp*(0.3+fd[ci]/255*0.7);
+          rctx.stroke();
+        }
+      }
+      rctx.restore();
+    }
+  }
+  // REC indicator only on preview (HTML overlay), not on canvas
 }
 
 // ── AUDIO ──
@@ -509,6 +610,9 @@ document.getElementById('audio-input').addEventListener('change',function(e){
   lbl.textContent=f.name.length>18?f.name.substring(0,16)+'…':f.name;lbl.classList.add('loaded');
   if(audio){audio.pause();audio.src='';}
   audio=new Audio(URL.createObjectURL(f));
+  audio.crossOrigin='anonymous';
+  // Setup analyser for visualizer
+  setupAnalyser();
   audio.addEventListener('loadedmetadata',function(){updateTime();drawWave(f);document.getElementById('no-audio-overlay').classList.add('hidden');});
   audio.addEventListener('ended',function(){isPlaying=false;updatePlayBtn();if(isRecording)stopRecord();});
 });
@@ -609,10 +713,20 @@ function startRec(){
 
   audio.currentTime=0;recordedChunks=[];
   var cs=offscreen.captureStream(30);
+  // Reuse analyserCtx if available to avoid MediaElementSource conflict
   if(audioCtxRec)try{audioCtxRec.close();}catch(e){}
-  audioCtxRec=new AudioContext();
-  var src=audioCtxRec.createMediaElementSource(audio),dst=audioCtxRec.createMediaStreamDestination();
-  src.connect(dst);src.connect(audioCtxRec.destination);
+  if(analyserCtx&&analyserSrc){
+    // Already connected via analyser — tap from analyser output for recording
+    audioCtxRec=analyserCtx;
+    var dst=audioCtxRec.createMediaStreamDestination();
+    analyser.connect(dst);
+    var src=null; // already connected
+  } else {
+    audioCtxRec=new AudioContext();
+    var dst=audioCtxRec.createMediaStreamDestination();
+    var src=audioCtxRec.createMediaElementSource(audio);
+    src.connect(dst);src.connect(audioCtxRec.destination);
+  }
   var ms=new MediaStream(cs.getVideoTracks().concat(dst.stream.getAudioTracks()));
   var mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(function(m){return MediaRecorder.isTypeSupported(m);})||'video/webm';
   mediaRecorder=new MediaRecorder(ms,{mimeType:mime,videoBitsPerSecond:6000000});
