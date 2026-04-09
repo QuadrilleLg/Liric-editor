@@ -498,10 +498,8 @@ function loop(){
     rctx.fillText('MONOLG',W/2,H/2+yOff+th/2+18);
     rctx.restore();
   }
-  if(isRecording&&Date.now()%1000<500){
-    rctx.beginPath();rctx.arc(W-18,14,5,0,Math.PI*2);rctx.fillStyle='#f00';rctx.fill();
-    rctx.font='10px Space Mono,monospace';rctx.fillStyle='#fff';rctx.textAlign='right';rctx.fillText('REC',W-26,19);
-  }
+  // REC indicator only on preview (HTML overlay handles it), not drawn on canvas
+  // so offscreen capture is clean
 }
 
 // ── AUDIO ──
