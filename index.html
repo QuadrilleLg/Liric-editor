@@ -49,6 +49,10 @@ input[type=file]{display:none;}
 .ar-icon{background:var(--border);display:block;}
 .ar-chip.on .ar-icon{background:var(--accent);}
 .ar-label{font-size:8px;text-align:center;}
+/* 2K badge */
+.ar-chip.hq{border-color:#ff8800;}
+.ar-chip.hq.on{border-color:var(--accent);}
+.ar-chip.hq .ar-badge{font-size:7px;color:#ff8800;letter-spacing:1px;}
 
 /* BG / BLUR / DIM */
 #bg-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
@@ -138,6 +142,9 @@ input[type=file]{display:none;}
 #fname-input:focus{border-color:var(--accent);}
 #bottom-bar{display:flex;flex-shrink:0;background:var(--surface);border-top:1px solid var(--border);padding-bottom:var(--safe-b);}
 #exp-open-btn{flex:1;height:44px;background:var(--surface2);border:none;color:var(--muted);font-family:'Space Mono',monospace;font-size:11px;cursor:pointer;letter-spacing:2px;text-transform:uppercase;}
+/* 2K warning notice */
+#res-notice{font-size:9px;color:#ff8800;letter-spacing:1px;padding:2px 0 6px;display:none;}
+#res-notice.show{display:block;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
 </head>
@@ -156,6 +163,7 @@ input[type=file]{display:none;}
       <span class="sg-label">FORMAT</span>
       <div class="chips" id="chips-ar"></div>
     </div>
+    <div id="res-notice">⚠ 2K ieraksts prasa daudz RAM — pārlūks var palēnināties</div>
     <!-- BG -->
     <div id="bg-row">
       <span class="sg-label2">FONS</span>
@@ -274,13 +282,15 @@ var particles=[], sparkles=[];
 var mediaRecorder=null, recordedChunks=[], isRecording=false, audioCtxRec=null;
 var bgImage=null, bgVideoEl=null, bgIsVideo=false, bgBlur=8, bgDim=0.40;
 
-// ── ASPECT RATIOS ──
+// ── ASPECT RATIOS (incl. 2K) ──
 var AR_PRESETS=[
-  {key:'16:9', label:'16:9', sub:'YouTube', w:1280, h:720},
-  {key:'9:16', label:'9:16', sub:'Shorts', w:720, h:1280},
-  {key:'1:1',  label:'1:1',  sub:'Instagram', w:1080, h:1080},
-  {key:'4:3',  label:'4:3',  sub:'Classic', w:1280, h:960},
-  {key:'4:5',  label:'4:5',  sub:'IG Post', w:1080, h:1350},
+  {key:'16:9',    label:'16:9',  sub:'YouTube',   w:1280, h:720},
+  {key:'9:16',    label:'9:16',  sub:'Shorts',    w:720,  h:1280},
+  {key:'1:1',     label:'1:1',   sub:'Instagram', w:1080, h:1080},
+  {key:'4:3',     label:'4:3',   sub:'Classic',   w:1280, h:960},
+  {key:'4:5',     label:'4:5',   sub:'IG Post',   w:1080, h:1350},
+  {key:'2k-16:9', label:'2K',    sub:'2560×1440', w:2560, h:1440, hq:true},
+  {key:'2k-9:16', label:'2K↑',   sub:'1440×2560', w:1440, h:2560, hq:true},
 ];
 var currentAR=AR_PRESETS[0];
 
@@ -289,20 +299,22 @@ function setAR(key){
   buildARChips();
   resizePreview();
   document.getElementById('ar-label-overlay').textContent=currentAR.label+' • '+currentAR.sub;
+  // Show warning for 2K
+  document.getElementById('res-notice').classList.toggle('show', !!currentAR.hq);
 }
 
 function buildARChips(){
   var el=document.getElementById('chips-ar'); el.innerHTML='';
-  // icon dimensions scaled to ~28px height
   AR_PRESETS.forEach(function(ar){
     var btn=document.createElement('button');
-    btn.className='ar-chip'+(ar.key===currentAR.key?' on':'');
-    // icon box
+    btn.className='ar-chip'+(ar.key===currentAR.key?' on':'')+(ar.hq?' hq':'');
     var maxDim=22;
     var iw,ih;
     if(ar.w>=ar.h){iw=maxDim;ih=Math.round(maxDim*ar.h/ar.w);}
     else{ih=maxDim;iw=Math.round(maxDim*ar.w/ar.h);}
-    btn.innerHTML='<span class="ar-icon" style="width:'+iw+'px;height:'+ih+'px;border-radius:1px;"></span><span class="ar-label">'+ar.label+'<br>'+ar.sub+'</span>';
+    btn.innerHTML='<span class="ar-icon" style="width:'+iw+'px;height:'+ih+'px;border-radius:1px;"></span>'
+      +'<span class="ar-label">'+ar.label+'<br>'+ar.sub+'</span>'
+      +(ar.hq?'<span class="ar-badge">2K</span>':'');
     btn.onclick=function(){setAR(ar.key);};
     el.appendChild(btn);
   });
@@ -315,12 +327,12 @@ function resizePreview(){
   var wrapH=wrap.offsetHeight;
   var ar=currentAR.w/currentAR.h;
   var w,h;
-  // fit inside wrap maintaining AR
   if(wrapW/wrapH>ar){h=wrapH;w=Math.round(h*ar);}
   else{w=wrapW;h=Math.round(w/ar);}
   var inner=document.getElementById('preview-inner');
   inner.style.width=w+'px';
   inner.style.height=h+'px';
+  // Preview canvas stays at screen resolution (no need to render 2K in preview)
   rc.width=w; rc.height=h;
   rc.style.width=w+'px'; rc.style.height=h+'px';
   particles=[];sparkles=[];
@@ -414,7 +426,6 @@ function applyCase(t){
   if(cfg.caseMode==='title')return t.replace(/\b\w/g,function(c){return c.toUpperCase();});
   return t;
 }
-// Bebas Neue is all-caps — auto-switch to Oswald for lower/title/none
 function getEffectiveFont(){
   var f=cfg.font;
   if(f==='bebas'&&cfg.caseMode!=='upper') return fontMap['oswald'];
@@ -432,8 +443,6 @@ function initCanvas(){
   rc=document.getElementById('render-canvas');
   rctx=rc.getContext('2d');
   bgVideoEl=document.getElementById('bg-video-el');
-  // set preview-wrap height
-  var app=document.getElementById('app');
   document.getElementById('preview-wrap').style.height='38vh';
   setTimeout(function(){
     resizePreview();
@@ -502,7 +511,7 @@ function getFreqData(){
   return freqData;
 }
 
-// ── RENDER LOOP ──
+// ── RENDER LOOP (preview canvas — screen res) ──
 function loop(){
   requestAnimationFrame(loop);
   if(!rc||!rctx)return;
@@ -543,12 +552,10 @@ function loop(){
     var lh=fs*1.18,th=lines.length*lh;
     for(var li=0;li<lines.length;li++)rctx.fillText(lines[li],W/2,H/2+yOff-th/2+li*lh+lh/2);
     rctx.shadowBlur=0;
-    // Artist name
     if(cfg.artistName){
       rctx.font='bold 11px Space Mono,monospace';rctx.fillStyle=s.sub;rctx.globalAlpha=op*.55;
       rctx.fillText(cfg.artistName.toUpperCase(),W/2,H/2+yOff+th/2+20);
     }
-    // Song name below artist
     if(cfg.songName){
       rctx.font='10px Space Mono,monospace';rctx.fillStyle=s.sub;rctx.globalAlpha=op*.4;
       rctx.fillText(cfg.songName,W/2,H/2+yOff+th/2+36);
@@ -572,7 +579,6 @@ function loop(){
           var alpha=0.4+val*0.6;
           rctx.fillStyle=vc;rctx.globalAlpha=vOp*alpha;
           rctx.fillRect(bx,by,bW,bH);
-          // mirror top
           rctx.globalAlpha=vOp*alpha*0.3;
           rctx.fillRect(bx,0,bW,bH*0.3);
         }
@@ -600,7 +606,6 @@ function loop(){
       rctx.restore();
     }
   }
-  // REC indicator only on preview (HTML overlay), not on canvas
 }
 
 // ── AUDIO ──
@@ -611,7 +616,6 @@ document.getElementById('audio-input').addEventListener('change',function(e){
   if(audio){audio.pause();audio.src='';}
   audio=new Audio(URL.createObjectURL(f));
   audio.crossOrigin='anonymous';
-  // Setup analyser for visualizer
   setupAnalyser();
   audio.addEventListener('loadedmetadata',function(){updateTime();drawWave(f);document.getElementById('no-audio-overlay').classList.add('hidden');});
   audio.addEventListener('ended',function(){isPlaying=false;updatePlayBtn();if(isRecording)stopRecord();});
@@ -698,29 +702,88 @@ function showCurrent(){
   }
 }
 
+// ── OFFSCREEN RENDER at full export resolution ──
+// Draws the same scene onto offscreen canvas at currentAR resolution
+function renderFrameToCanvas(ctx, W, H){
+  var s=SC[cfg.style];
+  // BG
+  if(bgIsVideo&&bgVideoEl&&bgVideoEl.readyState>=2){
+    ctx.save();if(bgBlur>0)ctx.filter='blur('+(bgBlur*W/rc.width)+'px)';
+    var vr=bgVideoEl.videoWidth/bgVideoEl.videoHeight,pr=W/H;
+    var sw,sh,sx,sy;
+    if(pr>vr){sw=W;sh=W/vr;sx=0;sy=(H-sh)/2;}else{sh=H;sw=H*vr;sx=(W-sw)/2;sy=0;}
+    ctx.drawImage(bgVideoEl,sx,sy,sw,sh);
+    ctx.filter='none';ctx.fillStyle='rgba(0,0,0,'+bgDim+')';ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  } else if(bgImage&&bgImage.complete){
+    ctx.save();if(bgBlur>0)ctx.filter='blur('+(bgBlur*W/rc.width)+'px)';
+    var iw=bgImage.naturalWidth,ih=bgImage.naturalHeight;
+    var scale=Math.max(W/iw,H/ih);
+    var sw2=iw*scale,sh2=ih*scale,sx2=(W-sw2)/2,sy2=(H-sh2)/2;
+    ctx.drawImage(bgImage,sx2,sy2,sw2,sh2);
+    ctx.filter='none';ctx.fillStyle='rgba(0,0,0,'+bgDim+')';ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  } else {
+    s.bg(ctx,W,H);
+  }
+  // Text
+  if(textAnim.opacity>0.01&&textAnim.text){
+    var fm=getEffectiveFont();
+    // Scale font size proportionally to export resolution
+    var scaleFactor=W/rc.width;
+    var fs=Math.min(W*.1,H*.14,80*scaleFactor);
+    var displayText=applyCase(textAnim.text);
+    ctx.save();ctx.textAlign='center';
+    if(s.shadow){ctx.shadowColor=s.shadow;ctx.shadowBlur=24*scaleFactor;}
+    var op=textAnim.opacity,yOff=textAnim.y*scaleFactor;
+    ctx.font=fm.weight+' '+fs+'px '+fm.family;ctx.fillStyle=s.color;
+    if(cfg.anim==='fade'){ctx.globalAlpha=op;}
+    else if(cfg.anim==='slideup'){ctx.globalAlpha=op;yOff+=(1-op)*40*scaleFactor;}
+    else if(cfg.anim==='zoom'){var sc=0.7+op*0.3;ctx.globalAlpha=op;ctx.translate(W/2,H/2+yOff);ctx.scale(sc,sc);ctx.translate(-W/2,-(H/2+yOff));}
+    else if(cfg.anim==='glitch'){ctx.globalAlpha=op*.4;ctx.fillStyle='#ff0044';ctx.fillText(displayText,W/2+Math.sin(textAnim.phase*3.7)*4*scaleFactor,H/2+yOff-2*scaleFactor);ctx.fillStyle='#00ffff';ctx.fillText(displayText,W/2-Math.sin(textAnim.phase*2.3)*4*scaleFactor,H/2+yOff+2*scaleFactor);ctx.globalAlpha=op;ctx.fillStyle=s.color;}
+    else if(cfg.anim==='typewriter'){ctx.globalAlpha=op;}
+    ctx.font=fm.weight+' '+fs+'px '+fm.family;
+    var txt=cfg.anim==='typewriter'?twState.displayed:displayText;
+    var words=txt.split(' '),lines=[],line='',mw=W*.84;
+    for(var wi=0;wi<words.length;wi++){var t2=line?line+' '+words[wi]:words[wi];if(ctx.measureText(t2).width>mw&&line){lines.push(line);line=words[wi];}else line=t2;}
+    if(line)lines.push(line);
+    var lh=fs*1.18,th=lines.length*lh;
+    for(var li=0;li<lines.length;li++)ctx.fillText(lines[li],W/2,H/2+yOff-th/2+li*lh+lh/2);
+    ctx.shadowBlur=0;
+    if(cfg.artistName){
+      ctx.font='bold '+(11*scaleFactor)+'px Space Mono,monospace';ctx.fillStyle=s.sub;ctx.globalAlpha=op*.55;
+      ctx.fillText(cfg.artistName.toUpperCase(),W/2,H/2+yOff+th/2+20*scaleFactor);
+    }
+    if(cfg.songName){
+      ctx.font=(10*scaleFactor)+'px Space Mono,monospace';ctx.fillStyle=s.sub;ctx.globalAlpha=op*.4;
+      ctx.fillText(cfg.songName,W/2,H/2+yOff+th/2+36*scaleFactor);
+    }
+    ctx.restore();
+  }
+}
+
 // ── RECORD ──
-// For render we use an offscreen canvas at full resolution
 function toggleRecord(){if(isRecording)stopRecord();else startRec();}
 function startRec(){
   if(!audio){alert('Ielādē audio!');return;}
   if(!lyrics.filter(function(l){return l.startTime!==null;}).length){alert('Nav sinhronizētu rindu!');return;}
 
-  // Create offscreen canvas at full export resolution
   var exportW=currentAR.w, exportH=currentAR.h;
   var offscreen=document.createElement('canvas');
   offscreen.width=exportW; offscreen.height=exportH;
   var offCtx=offscreen.getContext('2d');
 
   audio.currentTime=0;recordedChunks=[];
+
+  // Determine video bitrate — higher for 2K
+  var videoBitrate=currentAR.hq ? 18000000 : 6000000; // 18 Mbps for 2K, 6 Mbps for HD
+
   var cs=offscreen.captureStream(30);
-  // Reuse analyserCtx if available to avoid MediaElementSource conflict
   if(audioCtxRec)try{audioCtxRec.close();}catch(e){}
   if(analyserCtx&&analyserSrc){
-    // Already connected via analyser — tap from analyser output for recording
     audioCtxRec=analyserCtx;
     var dst=audioCtxRec.createMediaStreamDestination();
     analyser.connect(dst);
-    var src=null; // already connected
   } else {
     audioCtxRec=new AudioContext();
     var dst=audioCtxRec.createMediaStreamDestination();
@@ -729,7 +792,7 @@ function startRec(){
   }
   var ms=new MediaStream(cs.getVideoTracks().concat(dst.stream.getAudioTracks()));
   var mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(function(m){return MediaRecorder.isTypeSupported(m);})||'video/webm';
-  mediaRecorder=new MediaRecorder(ms,{mimeType:mime,videoBitsPerSecond:6000000});
+  mediaRecorder=new MediaRecorder(ms,{mimeType:mime,videoBitsPerSecond:videoBitrate});
   mediaRecorder.ondataavailable=function(e){if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
   mediaRecorder.onstop=function(){
     var blob=new Blob(recordedChunks,{type:mime});
@@ -745,13 +808,12 @@ function startRec(){
     }
   };
 
-  // Mirror render loop onto offscreen canvas
+  // Offscreen render loop — draws at full export resolution
   offRenderActive=true;
   (function offLoop(){
     if(!offRenderActive)return;
     requestAnimationFrame(offLoop);
-    // scale from preview canvas
-    offCtx.drawImage(rc,0,0,exportW,exportH);
+    renderFrameToCanvas(offCtx, exportW, exportH);
   })();
 
   mediaRecorder.start(200);isRecording=true;
@@ -780,7 +842,7 @@ function getFileName(){
 }
 
 function openExp(){
-  document.getElementById('exp-desc').textContent='Format: '+currentAR.label+' ('+currentAR.w+'x'+currentAR.h+') — '+currentAR.sub;
+  document.getElementById('exp-desc').textContent='Format: '+currentAR.label+' ('+currentAR.w+'×'+currentAR.h+') — '+currentAR.sub;
   document.getElementById('exp-panel').classList.add('open');
 }
 function closeExp(){document.getElementById('exp-panel').classList.remove('open');}
@@ -792,15 +854,12 @@ function setConvProgress(p){
   fill.style.width=p+'%';
 }
 
-// Load FFmpeg lazily
 async function loadFFmpeg(){
   if(ffmpegReady)return ffmpegInst;
   if(ffmpegLoading)return null;
   ffmpegLoading=true;
   setExpStatus('Ielādē FFmpeg (~30MB)...');
   try{
-    var FFmpeg=window.FFmpeg||window.FFmpegWASM;
-    // @ffmpeg/ffmpeg@0.12 UMD exports as FFmpegWASM
     var mod=window.FFmpegWASM||window.FFmpeg;
     ffmpegInst=new mod.FFmpeg();
     ffmpegInst.on('progress',function(e){
@@ -826,13 +885,15 @@ async function convertToMp4(webmBlob){
   setConvProgress(0);
   setExpStatus('Ielādē FFmpeg...');
   var ff=await loadFFmpeg();
-  if(!ff){setExpStatus('FFmpeg neizdevās ielādēt. Saglabāts WebM.');dlBlob(getFileName()+'.webm',webmBlob);return;}
+  if(!ff){setExpStatus('FFmpeg neizdevās. Saglabāts WebM.');dlBlob(getFileName()+'.webm',webmBlob);return;}
   try{
     setExpStatus('Sagatavo konversiju...');
     var arrBuf=await webmBlob.arrayBuffer();
     await ff.writeFile('input.webm',new Uint8Array(arrBuf));
     setExpStatus('Konvertē MP4...');
-    await ff.exec(['-i','input.webm','-c:v','libx264','-preset','ultrafast','-crf','28','-c:a','aac','-movflags','+faststart','output.mp4']);
+    // Use higher CRF quality for 2K
+    var crf=currentAR.hq?'24':'28';
+    await ff.exec(['-i','input.webm','-c:v','libx264','-preset','ultrafast','-crf',crf,'-c:a','aac','-movflags','+faststart','output.mp4']);
     var data=await ff.readFile('output.mp4');
     var mp4Blob=new Blob([data.buffer],{type:'video/mp4'});
     var fn=getFileName()+'-'+currentAR.key.replace(':','x')+'.mp4';
@@ -851,12 +912,9 @@ function startMP4Render(){
   if(!audio){alert('Ielādē audio!');return;}
   if(!lyrics.filter(function(l){return l.startTime!==null;}).length){alert('Nav sinhronizetu rindu!');return;}
   pendingMp4=true;
-  closeExp();
-  setExpStatus('Ieraksta video...');
-  startRec();
+  closeExp();setExpStatus('Ieraksta video...');startRec();
   audio.addEventListener('ended',function(){if(isRecording)stopRecord();},{once:true});
 }
-
 function startVideoRender(){
   if(!audio){alert('Ielādē audio!');return;}
   if(!lyrics.filter(function(l){return l.startTime!==null;}).length){alert('Nav sinhronizetu rindu!');return;}
